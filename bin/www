@@ -1,0 +1,153 @@
+#!/usr/bin/env node
+
+/**
+ * Module dependencies.
+ */
+
+var app = require("../app");
+var debug = require("debug")("backend:server");
+var http = require("http");
+
+/**
+ * Get port from environment and store in Express.
+ */
+
+var port = normalizePort(process.env.PORT || "3000");
+app.set("port", port);
+
+/**
+ * Create HTTP server.
+ */
+
+var server = http.createServer(app);
+const io = require("socket.io")(server, {
+  cors: {
+    origin: "*",
+  },
+});
+let onlineUser = [];
+io.on("connection", (socket) => {
+  const id = socket.handshake.query.id;
+  //   console.log("Here");
+  let toAddInSocket = true;
+  onlineUser.map((ids) => {
+    if (ids == id) toAddInSocket = false;
+  });
+  if (toAddInSocket) {
+    // console.log("Added");
+    onlineUser.push(id);
+    socket.join(id);
+    console.log(onlineUser);
+    socket.emit("online", onlineUser);
+  }
+  // chat
+  socket.on("chat", (payload) => {
+    socket.broadcast.to(payload.receiver).emit("receive", {
+      description: payload.description,
+      sender: id,
+      receiver: payload.receiver,
+      isdeleted: false,
+    });
+  });
+  socket.on("disconnect", () => {
+    onlineUser = onlineUser.filter((user) => id != user);
+    socket.emit("online", onlineUser);
+  });
+
+  // video
+  socket.on("callended", ({ endBy, endTo }) => {
+    console.log("call ended by", endBy.name);
+    console.log(endTo.name);
+    socket.to(endTo._id).emit("callended", { endBy, endTo });
+  });
+  socket.on("audioChanged", (payload) => {
+    socket.to(payload.userTo._id).emit("audioChanged", payload);
+  });
+  socket.on("videoChanged", (payload) => {
+    console.log("videochanged");
+    socket.to(payload.userTo._id).emit("videoChanged", payload);
+  });
+
+  socket.on("callmaking", (payload) => {
+    socket.to(payload.callTo._id).emit("callComing", payload);
+  });
+  socket.on("callaccepted", (payload) => {
+    socket.to(payload.callBy._id).emit("callaccepted", payload);
+    console.log("call Accepted");
+  });
+  socket.on("callrejected", (payload) => {
+    console.log("call rejected");
+
+    socket.to(payload.callBy._id).emit("callrejected", payload);
+  });
+
+  // sendi Message
+  socket.on("message", (payload) => {
+    console.log("On Message");
+    socket.to(payload.userTo._id).emit("message", payload);
+  });
+});
+
+/**
+ * Listen on provided port, on all network interfaces.
+ */
+
+server.listen(port, () => console.log(`server is running on port ${port}`));
+server.on("error", onError);
+server.on("listening", onListening);
+
+/**
+ * Normalize a port into a number, string, or false.
+ */
+
+function normalizePort(val) {
+  var port = parseInt(val, 10);
+
+  if (isNaN(port)) {
+    // named pipe
+    return val;
+  }
+
+  if (port >= 0) {
+    // port number
+    return port;
+  }
+
+  return false;
+}
+
+/**
+ * Event listener for HTTP server "error" event.
+ */
+
+function onError(error) {
+  if (error.syscall !== "listen") {
+    throw error;
+  }
+
+  var bind = typeof port === "string" ? "Pipe " + port : "Port " + port;
+
+  // handle specific listen errors with friendly messages
+  switch (error.code) {
+    case "EACCES":
+      console.error(bind + " requires elevated privileges");
+      process.exit(1);
+      break;
+    case "EADDRINUSE":
+      console.error(bind + " is already in use");
+      process.exit(1);
+      break;
+    default:
+      throw error;
+  }
+}
+
+/**
+ * Event listener for HTTP server "listening" event.
+ */
+
+function onListening() {
+  var addr = server.address();
+  var bind = typeof addr === "string" ? "pipe " + addr : "port " + addr.port;
+  debug("Listening on " + bind);
+}
