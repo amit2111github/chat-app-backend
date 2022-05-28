@@ -12,7 +12,7 @@ var http = require("http");
  * Get port from environment and store in Express.
  */
 
-var port = normalizePort(process.env.PORT || "3000");
+var port = normalizePort(process.env.PORT || "5000");
 app.set("port", port);
 
 /**
@@ -26,9 +26,9 @@ const io = require("socket.io")(server, {
   },
 });
 let onlineUser = [];
+let map = new Map();
 io.on("connection", (socket) => {
   const id = socket.handshake.query.id;
-  //   console.log("Here");
   let toAddInSocket = true;
   onlineUser.map((ids) => {
     if (ids == id) toAddInSocket = false;
@@ -40,7 +40,16 @@ io.on("connection", (socket) => {
     console.log(onlineUser);
     socket.emit("online", onlineUser);
   }
-  // chat
+  socket.on("peerId" , ({userId, peerId})=> {
+    map.set(userId , peerId);
+    console.log(map);
+  });
+  socket.on("getPeerId" , ({userId , myId})=> {
+    console.log("EMITING");
+    console.log(myId , userId);
+    if(!map.has(userId)) socket.emit("getPeerId",{error : "User is not online",peerId : "" , myId});
+    else socket.emit("getPeerId",{error : "" ,peerId:map.get(userId) ,myId});
+  });
   socket.on("chat", (payload) => {
     socket.broadcast.to(payload.receiver).emit("receive", {
       description: payload.description,
@@ -52,6 +61,7 @@ io.on("connection", (socket) => {
   socket.on("disconnect", () => {
     onlineUser = onlineUser.filter((user) => id != user);
     socket.emit("online", onlineUser);
+    map.delete(id);
   });
 
   // video
